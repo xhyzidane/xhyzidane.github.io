@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en" style="font-size: 10px;">
+<head>
+    <meta charset="UTF-8">
+    <title>测试</title>
+    <meta name="viewport" id="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <link rel="stylesheet" link="https://cdn.bootcss.com/normalize/7.0.0/normalize.min.css"></link>
+    <style>
+        [v-cloak] { display: none; }
+
+        html {
+            font-family: -apple-system-font, Helvetica Neue, PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif;
+        }
+
+        .serif {
+            font-family: Times New Roman, Hanyi DaSong SC, Songti SC, STSong, SimSun, serif;
+            /*font-family: test;*/
+        }
+
+        .cover-container {
+            width: 25rem;
+            height: 37rem;
+            color: #111;
+            background: #f41823;
+            font-size: 2.4rem;
+            padding: .8rem .5rem 0 0;
+        }
+
+        .ch-main-title {
+            text-align: right;
+            font-size: 5rem;
+            font-weight: 700;
+            color: #fae042;
+            line-height: 6rem;
+            height: 12rem;
+        }
+
+        .ch-sub-title {
+            text-align: right;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .author {
+            text-align: center;
+            font-size: 1.2rem;
+            margin-top: 1rem;
+        }
+
+        .cover-hd {
+            height: 12.5rem;
+        }
+
+        .cover-img {
+            width: 12.5rem;
+            height: 12.5rem;
+            float: left;
+        }
+
+        .cover-img img {
+            vertical-align: middle;
+            width: 100%;
+            height: 100%;
+            filter: grayscale(1);
+        }
+
+        .header-title {
+            width: 12.5rem;
+            float: left;
+            padding-left: 0.3rem;
+            box-sizing: border-box;
+        }
+
+        .header-author {
+            text-align: justify;
+            font-size: 1.2rem;
+            line-height: 2.1rem;
+            width: 90%;
+            overflow: hidden;
+            height: 2.1rem;
+        }
+
+        .header-author:after {
+            content: "";
+            display: inline-block;
+            width: 100%;
+        }
+
+        .en-main-title {
+            transform: scaleX(1.05);
+            transform-origin: left;
+            text-transform: uppercase;
+            font-size: 2rem;
+            line-height: 2.6rem;
+        }
+
+        .publisher {
+            text-align: center;
+            font-size: 1.2rem;
+            transform: scale(.8);
+            margin-top: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <button id="save">保存</button>
+    <div class="app" v-cloak>
+        <div class="cover-container">
+            <div class="cover-hd">
+                <div class="cover-img">
+                    <!-- <img v-bind:src="cover" alt=""> -->
+                    <div v-bind:style="{backgroundImage: 'url(' + cover + ')', backgroundSize: 'cover', backgroudRepeat: 'no-repeat', backgroundPosition: 'center', width: '100%', height: '100%'}" alt=""></div>
+                </div>
+                <div class="header-title">
+                    <div class="header-author">
+                        [美] {{ authorName }} 著
+                    </div>
+                    <div class="en-main-title serif">
+                        THE MAN
+                        <br>
+                        WHO
+                        <br>
+                        CHANGED
+                        <br>
+                        {{ bookNameEn }}
+                    </div>
+                </div>
+            </div>
+            <div class="ch-main-title serif">
+                他改变了<br>{{bookName}}
+            </div>
+            <div class="ch-sub-title serif">
+                {{bioName}}传
+            </div>
+            <div class="author" v-show="authorName.length">
+                {{ authorName }} 著
+            </div>
+            <div class="publisher">
+                上海译文出版社
+            </div>
+        </div>
+
+        <input type="text" maxlength="9" v-model="bookNameEn">
+        <input type="text" maxlength="10" v-model="bookName">
+        <input type="text" maxlength="10" v-model="bioName">
+
+        <div id="clipArea" style="width: 300px; height: 300px;"></div>
+        <input type="file" id="file" accept="image/jpeg, image/x-png, image/gif">
+        <button id="clipBtn">确定</button>
+        <div id="view" style="width: 125px; height: 125px; background-repeat: no-repeat; background-position: center center; background-size: contain;"></div>
+    </div>
+
+    <script type="text/javascript" src="http://static.jammyfm.com/resources/js-static/zepto.min.js"></script>
+    <script type="text/javascript" src="https://cdn.bootcss.com/vue/2.3.3/vue.min.js"></script>
+    <script type="text/javascript" src="http://static.jammyfm.com/wx/autumn/scripts/fastclick.min.js"></script>
+    <script type="text/javascript" src="http://h5.jammyfm.com/album2/js/iscroll-zoom.js"></script>
+    <script type="text/javascript" src="http://h5.jammyfm.com/album2/js/hammer.min.js"></script>
+    <script type="text/javascript" src="http://h5.jammyfm.com/album2/js/lrz.all.bundle.js"></script>
+    <script type="text/javascript" src="http://h5.jammyfm.com/album2/js/PhotoClip.js"></script>
+    <script src="http://cdn.bootcss.com/html2canvas/0.5.0-beta4/html2canvas.js"></script>
+    <script type="text/javascript">
+        (function($){
+            $.fn.maxlength = function(options){
+                var t = $(this);
+                t.each(function(){
+                    options = $.extend(
+                        {},
+                        {
+                            counterContainer: false,
+                            text: '%left characters left' // %length %maxlength %left
+                        },
+                        options
+                    );
+                    var t = $(this),
+                        data = {
+                            options: options,
+                            field: t,
+                            counter: $('<div class="maxlength"></div>'),
+                            maxLength: parseInt(t.attr("maxlength"), 10),
+                            lastLength: null,
+                            updateCounter: function(){
+                                var length = this.field.val().length,
+                                    text = this.options.text.replace(/\B%(length|maxlength|left)\b/g, $.proxy(function(match, p){
+                                        return (p == 'length')? length : (p == 'maxlength')? this.maxLength : (this.maxLength - length);
+                                    }, this));
+                                this.counter.html(text);
+                                if(length != this.lastLength){
+                                    this.updateLength(length);
+                                }
+                            },
+                            updateLength: function(length){
+                                this.field.trigger("update.maxlength", [
+                                    this.field,
+                                    this.lastLength,
+                                    length,
+                                    this.maxLength,
+                                    this.maxLength - length
+                                ]);
+                                this.lastLength = length;
+                            }
+                        };
+                    if(data.maxLength){
+                        data.field
+                            .data("maxlength", data)
+                            .bind({
+                                "keyup change": function(e){
+                                    $(this).data("maxlength").updateCounter();
+                                },
+                                "cut paste drop": function(e){
+                                    setTimeout($.proxy(function(){
+                                        $(this).data("maxlength").updateCounter();
+                                    }, this), 1);
+                                }
+                            });
+                        if(options.counterContainer){
+                            options.counterContainer.append(data.counter);
+                        } else {
+                            // data.field.after(data.counter);
+                        }
+                        data.updateCounter();
+                    }
+                });
+                return t;
+            };
+        })(Zepto);
+    </script>
+    <script>
+        FastClick.attach(document.body);
+
+        // app Vue instance
+        var app = new Vue({
+            // app initial state
+            data: {
+                bookName: '知乎',
+                bioName: '姜雨蒙',
+                authorName: '膜蛤士',
+                bookNameEn: 'ZHIHU',
+                cover: 'http://localhost/wordpress/wp-content/uploads/2016/08/201608241656577041.jpg'
+            }
+        })
+
+        app.$mount('.app')
+
+        var pc = new PhotoClip('#clipArea', {
+            size: 250,
+            outputSize: 250,
+            //adaptive: ['60%', '80%'],
+            file: '#file',
+            view: '#view',
+            ok: '#clipBtn',
+            //img: 'img/mm.jpg',
+            loadStart: function() {
+                console.log('开始读取照片');
+            },
+            loadComplete: function() {
+                console.log('照片读取完成');
+            },
+            done: function(dataURL) {
+                app.cover = dataURL;                
+            },
+            fail: function(msg) {
+                alert(msg);
+            }
+        });
+
+        $('#save').on('click', function() {
+            html2canvas($('.cover-container').get(0), {
+                allowTaint: true,
+                onrendered: function(canvas) {
+                    document.body.appendChild(canvas);
+                    var a = document.createElement('a');
+                    a.href = canvas.toDataURL("image/jpeg").replace("image/jpeg", "image/octet-stream");
+                    a.download = 'CHANGED CHIINA.jpg';
+                    a.click();
+                }
+            });
+        })
+
+
+    </script>
+</body>
+</html>
