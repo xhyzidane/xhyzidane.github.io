@@ -262,6 +262,144 @@
     .sbtn:last-child { border-right: none; }
     .sbtn:hover { background: #393e4f; color: #fff; }
     .sbtn.active { background: #1a3a70; color: var(--accent); font-weight: 600; }
+
+    /* ── App body (sidebar + main) ───────────────────────── */
+    .app-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: row;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ─────────────────────────────────────────── */
+    .sidebar {
+      width: 220px;
+      min-width: 0;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .sidebar.collapsed { width: 0 !important; }
+
+    .sidebar-hd {
+      height: 30px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      padding: 0 6px 0 10px;
+      background: #191c25;
+      border-bottom: 1px solid var(--border);
+      gap: 2px;
+      white-space: nowrap;
+    }
+    .sidebar-title {
+      flex: 1;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: .7px;
+    }
+    .sidebar-hbtn {
+      width: 22px; height: 22px;
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      border-radius: 3px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px;
+      transition: background .1s, color .1s;
+      flex-shrink: 0;
+      padding: 0;
+    }
+    .sidebar-hbtn:hover { background: var(--surface2); color: var(--text); }
+
+    .file-tree-area {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      position: relative;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .file-tree-area::-webkit-scrollbar { width: 5px; }
+    .file-tree-area::-webkit-scrollbar-track { background: transparent; }
+    .file-tree-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .file-tree-area.drag-over {
+      background: rgba(81,153,255,.06);
+      outline: 1px dashed rgba(81,153,255,.5);
+      outline-offset: -3px;
+    }
+
+    .tree-empty-hint {
+      padding: 28px 12px;
+      text-align: center;
+      color: #445068;
+      font-size: 11px;
+      line-height: 1.75;
+      pointer-events: none;
+    }
+    .tree-empty-icon { font-size: 26px; margin-bottom: 8px; opacity: .5; display: block; }
+
+    .file-tree { padding: 3px 0; }
+
+    .tree-node {
+      display: flex;
+      align-items: center;
+      height: 22px;
+      padding-right: 6px;
+      cursor: pointer;
+      font-size: 11.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      transition: background .07s;
+      user-select: none;
+    }
+    .tree-node:hover { background: rgba(255,255,255,.05); }
+    .tree-node.is-active { background: rgba(81,153,255,.16); }
+    .tree-node.is-active .tree-name { color: var(--accent); }
+
+    .tree-indent { display: inline-block; flex-shrink: 0; }
+    .tree-arrow {
+      width: 14px; height: 22px; flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 7px; color: #4a5570;
+    }
+    .tree-icon {
+      width: 16px; flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      margin-right: 2px; font-size: 12px;
+    }
+    .tree-name {
+      overflow: hidden; text-overflow: ellipsis;
+      color: var(--text-dim); line-height: 22px;
+      flex: 1;
+    }
+    .tree-node.folder-node .tree-name { color: #8fa0c0; font-size: 11px; font-weight: 500; }
+    .tree-node.folder-node:hover .tree-name { color: #b0c0d8; }
+
+    /* ── Sidebar resize handle ───────────────────────────── */
+    .sidebar-resize {
+      width: 4px;
+      flex-shrink: 0;
+      cursor: col-resize;
+      background: var(--border);
+      transition: background .12s;
+      position: relative;
+      z-index: 5;
+    }
+    .sidebar-resize:hover,
+    .sidebar-resize.dragging { background: var(--accent); }
+    .sidebar-resize.sr-hidden { display: none; }
+
+    /* workspace inside app-body */
+    .app-body > .workspace { min-width: 0; flex: 1; }
   </style>
 </head>
 <body>
@@ -271,7 +409,23 @@
   <div class="logo">Mini<em>Audition</em></div>
   <div class="sep"></div>
 
+  <button class="tbtn" id="btn-files" title="文件面板 (F)">
+    <svg width="14" height="12" viewBox="0 0 14 12">
+      <path d="M0.5 1h4.5l1 1.5H13.5v9H0.5z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+      <line x1="3" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity=".7"/>
+      <line x1="3" y1="8.5" x2="9" y2="8.5" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity=".5"/>
+    </svg>
+  </button>
+  <div class="sep"></div>
+
   <div class="transport">
+    <!-- Prev -->
+    <button class="tbtn" id="btn-prev" title="上一首 ([)">
+      <svg width="13" height="11" viewBox="0 0 13 11">
+        <rect x="0" y="0" width="2.5" height="11" rx=".8" fill="currentColor"/>
+        <path d="M13 0.5 L3.5 5.5 L13 10.5 Z" fill="currentColor"/>
+      </svg>
+    </button>
     <!-- Stop -->
     <button class="tbtn" id="btn-stop" title="停止 (S)">
       <svg width="11" height="11" viewBox="0 0 11 11">
@@ -286,6 +440,13 @@
       <svg id="icon-pause" width="11" height="13" viewBox="0 0 11 13" style="display:none">
         <rect x="0"   y="0" width="4" height="13" rx="1" fill="currentColor"/>
         <rect x="7"   y="0" width="4" height="13" rx="1" fill="currentColor"/>
+      </svg>
+    </button>
+    <!-- Next -->
+    <button class="tbtn" id="btn-next" title="下一首 (])">
+      <svg width="13" height="11" viewBox="0 0 13 11">
+        <rect x="10.5" y="0" width="2.5" height="11" rx=".8" fill="currentColor"/>
+        <path d="M0 0.5 L9.5 5.5 L0 10.5 Z" fill="currentColor"/>
       </svg>
     </button>
   </div>
@@ -303,8 +464,49 @@
     <button class="sbtn" data-speed="2">2×</button>
   </div>
 
+  <div class="speed-group" id="seek-group">
+    <span class="speed-label">跳转</span>
+    <button class="sbtn" data-seek="1">1s</button>
+    <button class="sbtn active" data-seek="3">3s</button>
+    <button class="sbtn" data-seek="5">5s</button>
+  </div>
+
   <div class="file-badge" id="file-badge"></div>
 </div>
+
+<!-- ── App body ─────────────────────────────────────────── -->
+<div class="app-body" id="app-body">
+
+<!-- ── Sidebar ───────────────────────────────────────────── -->
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-hd">
+    <span class="sidebar-title">文件</span>
+    <button class="sidebar-hbtn" id="sidebar-open-btn" title="打开文件夹">
+      <svg width="13" height="11" viewBox="0 0 13 11">
+        <path d="M0.5 2h3.8l1 1.5H12.5v7H0.5z" fill="none" stroke="currentColor" stroke-width=".9" stroke-linejoin="round"/>
+        <line x1="6.5" y1="4.5" x2="6.5" y2="8" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity=".75"/>
+        <line x1="4.5" y1="6.5" x2="8.5" y2="6.5" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity=".75"/>
+      </svg>
+    </button>
+    <button class="sidebar-hbtn" id="sidebar-clear-btn" title="清除列表">
+      <svg width="9" height="9" viewBox="0 0 9 9">
+        <line x1="0.5" y1="0.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        <line x1="8.5" y1="0.5" x2="0.5" y2="8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </div>
+  <div class="file-tree-area" id="file-tree-area">
+    <div class="tree-empty-hint" id="tree-empty-hint">
+      <span class="tree-empty-icon">📁</span>
+      拖放文件夹到此处<br>
+      或 <span class="browse" id="sidebar-browse-link">点击浏览文件夹</span>
+    </div>
+    <div class="file-tree" id="file-tree"></div>
+  </div>
+</div>
+
+<!-- Resize handle -->
+<div class="sidebar-resize" id="sidebar-resize"></div>
 
 <!-- ── Workspace ──────────────────────────────────────── -->
 <div class="workspace" id="workspace">
@@ -336,6 +538,7 @@
   </div>
 
 </div>
+</div><!-- /.app-body -->
 
 <!-- ── Status bar ─────────────────────────────────────── -->
 <div class="statusbar">
@@ -358,12 +561,16 @@
   <div class="sb-hints">
     <kbd>空格</kbd> 播放/暂停 &nbsp;
     <kbd>S</kbd> 停止 &nbsp;
+    <kbd>[</kbd><kbd>]</kbd> 上/下一首 &nbsp;
+    <kbd>←</kbd><kbd>→</kbd> 后退/前进 &nbsp;
     <kbd>Home</kbd> 回到开头 &nbsp;
+    <kbd>F</kbd> 文件面板 &nbsp;
     单击 = 设置播放点 · 拖拽 = 循环区间
   </div>
 </div>
 
 <input type="file" id="file-input" accept="audio/*" hidden />
+<input type="file" id="folder-input" webkitdirectory multiple hidden />
 
 <script>
 'use strict';
@@ -398,8 +605,17 @@ const S = {
   // Playback speed (playbackRate)
   speed: 1,
 
+  // Seek step in seconds (arrow keys)
+  seekSec: 3,
+
   // rAF handle
   raf: null,
+
+  // Sidebar
+  sidebarW:       220,     // current width in px
+  sidebarVisible: true,
+  fileTree:       [],      // array of tree nodes
+  activeFileId:   null,    // id of currently loaded file node
 };
 
 // Helper: true if a range (not just a point) is selected
@@ -431,6 +647,19 @@ const D = {
   sbDur:      $('sb-dur'),
   sbSel:      $('sb-sel'),
   sbState:    $('sb-state'),
+  // Sidebar
+  sidebar:         $('sidebar'),
+  sidebarResize:   $('sidebar-resize'),
+  fileTreeArea:    $('file-tree-area'),
+  fileTreeEl:      $('file-tree'),
+  treeEmptyHint:   $('tree-empty-hint'),
+  sidebarClearBtn: $('sidebar-clear-btn'),
+  btnFiles:        $('btn-files'),
+  folderInput:     $('folder-input'),
+  sidebarOpenBtn:  $('sidebar-open-btn'),
+  sidebarBrowseLink: $('sidebar-browse-link'),
+  btnPrev:         $('btn-prev'),
+  btnNext:         $('btn-next'),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1020,6 +1249,364 @@ D.waveCv.addEventListener('mouseleave', () => {
 function clamp01(v) { return Math.max(0, Math.min(1, v)); }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// File Tree
+// ─────────────────────────────────────────────────────────────────────────────
+const AUDIO_EXTS = new Set(['mp3','wav','ogg','flac','aac','m4a','wma','opus','aiff','aif','caf']);
+
+let _nodeId = 0;
+function nextId() { return ++_nodeId; }
+
+function getAllEntries(dirEntry) {
+  return new Promise((resolve, reject) => {
+    const reader = dirEntry.createReader();
+    const all = [];
+    function read() {
+      reader.readEntries(batch => {
+        if (!batch.length) { resolve(all); return; }
+        all.push(...batch);
+        read();
+      }, reject);
+    }
+    read();
+  });
+}
+
+async function readDirEntry(dirEntry, depth) {
+  const node = { id: nextId(), name: dirEntry.name, type: 'folder', children: [], expanded: depth === 0 };
+  if (depth >= 5) return node;
+  let entries = [];
+  try { entries = await getAllEntries(dirEntry); } catch (err) {
+    console.error('readEntries error:', err);
+    return node;
+  }
+
+  const subs = [];
+  for (const e of entries) {
+    if (e.isDirectory) {
+      subs.push(readDirEntry(e, depth + 1));
+    } else if (e.isFile) {
+      const ext = e.name.split('.').pop().toLowerCase();
+      if (AUDIO_EXTS.has(ext)) {
+        subs.push(Promise.resolve({ id: nextId(), name: e.name, type: 'file', entry: e }));
+      }
+    }
+  }
+  const children = await Promise.all(subs);
+  children.sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+    return a.name.localeCompare(b.name, undefined, { numeric: true });
+  });
+  node.children = children.filter(c => c.type === 'file' || c.children.length > 0);
+  return node;
+}
+
+// ─── Build tree from <input webkitdirectory> FileList ──────────────────────
+function buildTreeFromFiles(fileList) {
+  const files = Array.from(fileList)
+    .filter(f => AUDIO_EXTS.has(f.name.split('.').pop().toLowerCase()))
+    .sort((a, b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath, undefined, { numeric: true }));
+
+  if (!files.length) {
+    D.sbState.textContent = '该文件夹内未找到音频文件';
+    return;
+  }
+
+  const rootName = files[0].webkitRelativePath.split('/')[0] || '文件夹';
+  const root = { id: nextId(), name: rootName, type: 'folder', children: [], expanded: true };
+  const pathToNode = new Map([[rootName, root]]);
+
+  for (const file of files) {
+    const parts = file.webkitRelativePath ? file.webkitRelativePath.split('/') : [rootName, file.name];
+    let node = root;
+    for (let i = 1; i < parts.length - 1; i++) {
+      const key = parts.slice(0, i + 1).join('/');
+      if (!pathToNode.has(key)) {
+        const fn = { id: nextId(), name: parts[i], type: 'folder', children: [], expanded: false };
+        node.children.push(fn);
+        pathToNode.set(key, fn);
+      }
+      node = pathToNode.get(key);
+    }
+    node.children.push({ id: nextId(), name: parts[parts.length - 1], type: 'file', file });
+  }
+
+  S.fileTree.push(root);
+  renderFileTree();
+  D.sbState.textContent = '就绪';
+  if (!S.sidebarVisible) toggleSidebar();
+}
+
+async function addFolderToTree(dirEntry) {
+  D.sbState.textContent = '读取目录…';
+  try {
+    const node = await readDirEntry(dirEntry, 0);
+    if (!node.children.length) {
+      D.sbState.textContent = '该文件夹内未找到音频文件';
+      return;
+    }
+    S.fileTree.push(node);
+    renderFileTree();
+    D.sbState.textContent = '就绪';
+    if (!S.sidebarVisible) toggleSidebar();
+  } catch (err) {
+    console.error(err);
+    D.sbState.textContent = '读取目录失败';
+  }
+}
+
+function renderFileTree() {
+  const container = D.fileTreeEl;
+  const scrollTop = D.fileTreeArea.scrollTop;
+  container.innerHTML = '';
+
+  if (!S.fileTree.length) {
+    D.treeEmptyHint.style.display = '';
+    return;
+  }
+  D.treeEmptyHint.style.display = 'none';
+
+  function renderNode(node, depth) {
+    const el = document.createElement('div');
+    el.className = 'tree-node' + (node.type === 'folder' ? ' folder-node' : '');
+    if (node.type === 'file' && node.id === S.activeFileId) el.classList.add('is-active');
+
+    const indent = document.createElement('span');
+    indent.className = 'tree-indent';
+    indent.style.width = (depth * 14) + 'px';
+    el.appendChild(indent);
+
+    const arrow = document.createElement('span');
+    arrow.className = 'tree-arrow';
+    if (node.type === 'folder') arrow.textContent = node.expanded ? '▾' : '▸';
+    el.appendChild(arrow);
+
+    const icon = document.createElement('span');
+    icon.className = 'tree-icon';
+    if (node.type === 'folder') {
+      icon.innerHTML = node.expanded
+        ? '<svg width="13" height="11" viewBox="0 0 13 11"><path d="M0.5 3.5h12v7H0.5z" fill="#3a5070" stroke="#4a6080" stroke-width=".8"/><path d="M0.5 2h3.8l1 1.5h7.2v1H0.5z" fill="#4a6080"/></svg>'
+        : '<svg width="13" height="11" viewBox="0 0 13 11"><path d="M0.5 2h3.8l1 1.5H12.5v7H0.5z" fill="none" stroke="#4a6080" stroke-width=".9" stroke-linejoin="round"/></svg>';
+    } else {
+      icon.innerHTML = '<svg width="11" height="13" viewBox="0 0 11 13"><rect x="0.5" y="0.5" width="7.5" height="11" rx="1" fill="none" stroke="#2a5050" stroke-width=".9"/><path d="M2 4h5M2 6.5h4M2 9h3" stroke="#3ecf8e" stroke-width=".8" stroke-linecap="round" opacity=".65"/></svg>';
+    }
+    el.appendChild(icon);
+
+    const name = document.createElement('span');
+    name.className = 'tree-name';
+    name.textContent = node.name;
+    el.appendChild(name);
+
+    el.addEventListener('click', () => onTreeNodeClick(node));
+    container.appendChild(el);
+
+    if (node.type === 'folder' && node.expanded) {
+      for (const child of node.children) renderNode(child, depth + 1);
+    }
+  }
+
+  for (const root of S.fileTree) renderNode(root, 0);
+  D.fileTreeArea.scrollTop = scrollTop;
+}
+
+function onTreeNodeClick(node) {
+  if (node.type === 'folder') {
+    node.expanded = !node.expanded;
+    renderFileTree();
+    return;
+  }
+  S.activeFileId = node.id;
+  renderFileTree();
+  if (node.file) {
+    // From <input webkitdirectory> — direct File reference
+    loadFile(node.file);
+  } else if (node.entry) {
+    // From FileSystem API drag-and-drop
+    node.entry.file(
+      file => loadFile(file),
+      err  => { console.error('无法读取文件:', err); D.sbState.textContent = '读取文件失败'; }
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prev / Next track  &  Seek
+// ─────────────────────────────────────────────────────────────────────────────
+function flattenFiles() {
+  const result = [];
+  function walk(nodes) {
+    for (const n of nodes) {
+      if (n.type === 'file') result.push(n);
+      else if (n.children) walk(n.children);
+    }
+  }
+  walk(S.fileTree);
+  return result;
+}
+
+function playAdjacentFile(dir) {
+  const files = flattenFiles();
+  if (!files.length) return;
+  const idx = files.findIndex(f => f.id === S.activeFileId);
+  let next;
+  if (idx === -1) {
+    next = dir > 0 ? files[0] : files[files.length - 1];
+  } else {
+    const ni = idx + dir;
+    if (ni < 0 || ni >= files.length) return;
+    next = files[ni];
+  }
+  onTreeNodeClick(next);
+}
+
+function seekBy(delta) {
+  if (!S.buffer) return;
+  const dur = S.buffer.duration;
+  const pos = getCurrPos();
+  const newPos = Math.max(0, Math.min(dur, pos + delta));
+  S.pbOffset = newPos;
+  if (S.playing) doPlay(newPos);
+  else { updateTimecode(newPos); redrawAll(); }
+}
+
+D.btnPrev.addEventListener('click', () => playAdjacentFile(-1));
+D.btnNext.addEventListener('click', () => playAdjacentFile(+1));
+
+document.getElementById('seek-group').addEventListener('click', e => {
+  const btn = e.target.closest('.sbtn[data-seek]');
+  if (!btn) return;
+  const sec = parseInt(btn.dataset.seek);
+  if (isNaN(sec) || sec === S.seekSec) return;
+  S.seekSec = sec;
+  document.querySelectorAll('#seek-group .sbtn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.seek) === sec);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sidebar toggle & resize
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Unified drop handler used by both workspace and file-tree-area
+async function handleDropItems(dt) {
+  const items = dt.items;
+  if (items && items.length) {
+    const firstEntry = items[0].webkitGetAsEntry?.();
+    if (firstEntry && firstEntry.isDirectory) {
+      // Try FileSystem API first; if it returns empty, fall back to dt.files
+      D.sbState.textContent = '读取目录…';
+      try {
+        const node = await readDirEntry(firstEntry, 0);
+        if (node.children.length) {
+          S.fileTree.push(node);
+          renderFileTree();
+          D.sbState.textContent = '就绪';
+          if (!S.sidebarVisible) toggleSidebar();
+          return;
+        }
+      } catch (err) {
+        console.warn('FileSystem API failed, trying files fallback:', err);
+      }
+      // Fallback: dt.files won't contain folder contents in most browsers
+      // so guide the user to use the folder picker button
+      D.sbState.textContent = '拖放不可用，请使用 🗂 按钮打开文件夹';
+      if (!S.sidebarVisible) toggleSidebar();
+      return;
+    }
+    if (firstEntry && firstEntry.isFile) {
+      const ext = firstEntry.name.split('.').pop().toLowerCase();
+      if (AUDIO_EXTS.has(ext)) {
+        const file = await new Promise((res, rej) => firstEntry.file(res, rej));
+        loadFile(file);
+        return;
+      }
+    }
+  }
+  // Plain files fallback (single audio file via dt.files)
+  const file = dt.files[0];
+  if (file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (AUDIO_EXTS.has(ext)) { loadFile(file); return; }
+    // If it looks like a folder (size 0), guide user
+    if (file.size === 0) {
+      D.sbState.textContent = '请使用侧边栏的 🗂 按钮选择文件夹';
+      if (!S.sidebarVisible) toggleSidebar();
+    }
+  }
+}
+
+function toggleSidebar() {
+  S.sidebarVisible = !S.sidebarVisible;
+  D.sidebar.classList.toggle('collapsed', !S.sidebarVisible);
+  D.sidebarResize.classList.toggle('sr-hidden', !S.sidebarVisible);
+  D.btnFiles.classList.toggle('active', S.sidebarVisible);
+  resizeCanvases();
+  redrawAll();
+}
+
+D.btnFiles.addEventListener('click', toggleSidebar);
+
+D.sidebarOpenBtn.addEventListener('click', () => D.folderInput.click());
+D.sidebarBrowseLink.addEventListener('click', () => D.folderInput.click());
+
+D.folderInput.addEventListener('change', e => {
+  if (e.target.files && e.target.files.length) buildTreeFromFiles(e.target.files);
+  D.folderInput.value = '';
+});
+
+D.sidebarClearBtn.addEventListener('click', () => {
+  S.fileTree = [];
+  S.activeFileId = null;
+  renderFileTree();
+});
+
+// Sidebar resize handle
+let _srDragging = false, _srStartX = 0, _srStartW = 0;
+
+D.sidebarResize.addEventListener('mousedown', e => {
+  _srDragging = true;
+  _srStartX   = e.clientX;
+  _srStartW   = D.sidebar.offsetWidth;
+  D.sidebarResize.classList.add('dragging');
+  document.body.style.cursor     = 'col-resize';
+  document.body.style.userSelect = 'none';
+  e.preventDefault();
+});
+
+window.addEventListener('mousemove', e => {
+  if (!_srDragging) return;
+  const w = Math.max(140, Math.min(480, _srStartW + e.clientX - _srStartX));
+  S.sidebarW = w;
+  D.sidebar.style.width = w + 'px';
+});
+
+window.addEventListener('mouseup', () => {
+  if (!_srDragging) return;
+  _srDragging = false;
+  D.sidebarResize.classList.remove('dragging');
+  document.body.style.cursor     = '';
+  document.body.style.userSelect = '';
+  resizeCanvases();
+  redrawAll();
+});
+
+// Sidebar drag-and-drop (folders)
+D.fileTreeArea.addEventListener('dragover', e => {
+  e.preventDefault();
+  D.fileTreeArea.classList.add('drag-over');
+});
+
+D.fileTreeArea.addEventListener('dragleave', e => {
+  if (D.fileTreeArea.contains(e.relatedTarget)) return;
+  D.fileTreeArea.classList.remove('drag-over');
+});
+
+D.fileTreeArea.addEventListener('drop', async e => {
+  e.preventDefault();
+  D.fileTreeArea.classList.remove('drag-over');
+  await handleDropItems(e.dataTransfer);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Keyboard
 // ─────────────────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
@@ -1054,6 +1641,31 @@ document.addEventListener('keydown', e => {
         updateTimecode(0); updateSelStatus(); redrawAll();
       }
       break;
+
+    case 'KeyF':
+      e.preventDefault();
+      toggleSidebar();
+      break;
+
+    case 'BracketLeft':
+      e.preventDefault();
+      playAdjacentFile(-1);
+      break;
+
+    case 'BracketRight':
+      e.preventDefault();
+      playAdjacentFile(+1);
+      break;
+
+    case 'ArrowLeft':
+      e.preventDefault();
+      seekBy(-S.seekSec);
+      break;
+
+    case 'ArrowRight':
+      e.preventDefault();
+      seekBy(S.seekSec);
+      break;
   }
 });
 
@@ -1072,11 +1684,11 @@ D.workspace.addEventListener('dragleave', e => {
   if (S.buffer) D.dropZone.classList.add('hidden');
 });
 
-D.workspace.addEventListener('drop', e => {
+D.workspace.addEventListener('drop', async e => {
   e.preventDefault();
   D.dropZone.classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) loadFile(file);
+  if (S.buffer) D.dropZone.classList.add('hidden');
+  await handleDropItems(e.dataTransfer);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1128,6 +1740,8 @@ const ro = new ResizeObserver(() => {
 ro.observe(D.trackArea);
 
 // ── Init ──
+D.sidebar.style.width = S.sidebarW + 'px';
+D.btnFiles.classList.add('active');
 resizeCanvases();
 redrawAll();
 </script>
