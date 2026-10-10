@@ -175,6 +175,8 @@
       flex-shrink: 0;
       position: relative;
       border-radius: 4px 4px 0 0;
+      border-left: 1px solid transparent;
+      border-right: 1px solid transparent;
       overflow: hidden;
     }
 
@@ -217,6 +219,7 @@
       color: #47516a;
       font-size: 10.5px;
       white-space: nowrap;
+      position: relative;
     }
     kbd {
       background: #2b2f3b;
@@ -225,6 +228,49 @@
       padding: 0 4px 1px;
       font-size: 10px;
       font-family: inherit;
+    }
+
+    /* Shortcut popup (hover the 快捷键 button) */
+    .hints-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      color: var(--text-dim);
+      font-size: 10px;
+      font-family: inherit;
+      padding: 2px 9px;
+      cursor: pointer;
+      transition: color .1s, border-color .1s;
+    }
+    .hints-btn:hover { color: var(--text); border-color: var(--accent); }
+    .hints-pop {
+      display: none;
+      position: absolute;
+      right: 0;
+      bottom: 24px;
+      min-width: 250px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 14px;
+      box-shadow: 0 6px 24px rgba(0,0,0,.45);
+      z-index: 50;
+    }
+    .sb-hints:hover .hints-pop { display: block; }
+    .hints-row {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      font-size: 11px;
+      color: var(--text);
+      line-height: 2.05;
+      white-space: nowrap;
+    }
+    .hints-keys {
+      min-width: 96px;
+      text-align: right;
+      color: var(--text-dim);
+      flex-shrink: 0;
     }
 
     /* ── Speed selector ──────────────────────────────── */
@@ -471,6 +517,10 @@
     <button class="sbtn" data-seek="5">5s</button>
   </div>
 
+  <div class="speed-group">
+    <button class="sbtn" id="btn-auto" title="播完自动播放列表中的下一首">连播</button>
+  </div>
+
   <div class="file-badge" id="file-badge"></div>
 </div>
 
@@ -559,18 +609,28 @@
     <span class="sb-val" id="sb-state">就绪</span>
   </div>
   <div class="sb-hints">
-    <kbd>空格</kbd> 播放/暂停 &nbsp;
-    <kbd>S</kbd> 停止 &nbsp;
-    <kbd>[</kbd><kbd>]</kbd> 上/下一首 &nbsp;
-    <kbd>←</kbd><kbd>→</kbd> 后退/前进 &nbsp;
-    <kbd>Home</kbd> 回到开头 &nbsp;
-    <kbd>F</kbd> 文件面板 &nbsp;
-    单击 = 设置播放点 · 拖拽 = 循环区间
+    <button class="hints-btn" title="快捷键">快捷键</button>
+    <div class="hints-pop">
+      <div class="hints-row"><span class="hints-keys"><kbd>空格</kbd></span><span>播放 / 暂停</span></div>
+      <div class="hints-row"><span class="hints-keys"><kbd>Enter</kbd></span><span>重播当前句（从句首）</span></div>
+      <div class="hints-row"><span class="hints-keys"><kbd>A</kbd> / <kbd>B</kbd></span><span>在播放头处设句首 / 句尾</span></div>
+      <div class="hints-row"><span class="hints-keys"><kbd>S</kbd></span><span>停止</span></div>
+      <div class="hints-row"><span class="hints-keys"><kbd>Esc</kbd></span><span>停止并清除选区</span></div>
+      <div class="hints-row"><span class="hints-keys"><kbd>[</kbd> <kbd>]</kbd></span><span>上一首 / 下一首</span></div>
+      <div class="hints-row"><span class="hints-keys"><kbd>←</kbd> <kbd>→</kbd></span><span>后退 / 前进（按跳转步长）</span></div>
+      <div class="hints-row"><span class="hints-keys"><kbd>Home</kbd></span><span>回到开头</span></div>
+      <div class="hints-row"><span class="hints-keys"><kbd>Z</kbd></span><span>缩放到选区 / 复位全览</span></div>
+      <div class="hints-row"><span class="hints-keys"><kbd>F</kbd></span><span>文件面板</span></div>
+      <div class="hints-row"><span class="hints-keys">⌘/Ctrl+滚轮</span><span>以光标为中心缩放</span></div>
+      <div class="hints-row"><span class="hints-keys">滚轮</span><span>水平平移</span></div>
+      <div class="hints-row"><span class="hints-keys">鼠标</span><span>单击=播放点 · 拖拽=循环 · 拖边缘=微调</span></div>
+    </div>
   </div>
 </div>
 
 <input type="file" id="file-input" accept="audio/*" hidden />
 <input type="file" id="folder-input" webkitdirectory multiple hidden />
+<audio id="player" hidden></audio>
 
 <script>
 'use strict';
@@ -580,14 +640,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const S = {
   // Audio
-  actx:   null,
+  actx:   null,   // AudioContext — used only for decodeAudioData (waveform peaks)
   buffer: null,
-  source: null,
 
-  // Playback
+  // Playback — position/loop/rate state lives on the hidden <audio> element;
+  // S.playing is kept in sync by the element's play/pause/ended events
   playing:     false,
-  pbActxStart: 0,   // actx.currentTime when play() was called
-  pbOffset:    0,   // offset in seconds from which playback started
 
   // Selection – normalised [0, 1]
   selA: 0,  // anchor (where drag began)
@@ -616,12 +674,52 @@ const S = {
   sidebarVisible: true,
   fileTree:       [],      // array of tree nodes
   activeFileId:   null,    // id of currently loaded file node
+
+  // Zoom view window – normalised [0, 1] over the whole buffer
+  viewA: 0,
+  viewB: 1,
+
+  // Canvas logical sizes (CSS px); backing store is devicePixelRatio-scaled
+  rulerW: 0,
+  waveW:  0,
+  waveH:  0,
+
+  // Auto-play next file in the tree when playback ends naturally
+  autoNext: false,
 };
 
 // Helper: true if a range (not just a point) is selected
 function hasRange() { return Math.abs(S.selA - S.selB) > 0.0002; }
 function selStart()  { return Math.min(S.selA, S.selB); }
 function selEnd()    { return Math.max(S.selA, S.selB); }
+
+// Zoom view mapping: buffer-norm [0,1] <-> screen-norm [0,1] over the view window
+function viewDur()  { return Math.max(1e-6, S.viewB - S.viewA); }
+function xToBuf(x)  { return clamp01(S.viewA + x * (S.viewB - S.viewA)); }
+function bufToX(n)  { return (n - S.viewA) / viewDur(); }
+
+// Move one selection edge without crossing the other (edge micro-adjust)
+function setSelStart(norm) {
+  const v = Math.min(norm, selEnd());
+  if (S.selA <= S.selB) S.selA = v; else S.selB = v;
+}
+function setSelEnd(norm) {
+  const v = Math.max(norm, selStart());
+  if (S.selA <= S.selB) S.selB = v; else S.selA = v;
+}
+
+// Pan the view so pos (seconds) becomes visible near the left edge
+function ensurePosVisible(pos) {
+  if (!S.buffer) return;
+  const ps = pos / S.buffer.duration;
+  if (ps >= S.viewA && ps <= S.viewB) return;
+  const vd = viewDur();
+  let a = clamp01(ps - vd * 0.1);
+  if (a + vd > 1) a = Math.max(0, 1 - vd);
+  S.viewA = a;
+  S.viewB = a + vd;
+  buildPeaks();
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DOM refs
@@ -660,6 +758,8 @@ const D = {
   sidebarBrowseLink: $('sidebar-browse-link'),
   btnPrev:         $('btn-prev'),
   btnNext:         $('btn-next'),
+  btnAuto:         $('btn-auto'),
+  player:          $('player'),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -676,42 +776,229 @@ function getActx() {
 // ─────────────────────────────────────────────────────────────────────────────
 // File Loading
 // ─────────────────────────────────────────────────────────────────────────────
-async function loadFile(file) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Audio tag parsing (ID3v2 / MP4 ilst / FLAC Vorbis comments) — best effort,
+// pure functions; any malformed input returns null/{} and the UI falls back
+// to the filename. Must run BEFORE decodeAudioData (it detaches the buffer).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _td(enc, bytes) {
+  try { return new TextDecoder(enc).decode(bytes); } catch (_) { return ''; }
+}
+
+// ID3 text frame body: encoding byte + (possibly BOM'd) text, NUL-terminated
+function _id3Text(bytes) {
+  if (!bytes.length) return '';
+  const enc  = bytes[0];
+  const body = bytes.subarray(1);
+  let text = '';
+  if (enc === 0)      text = _td('windows-1252', body);
+  else if (enc === 1) text = (body[0] === 0xFE && body[1] === 0xFF)
+    ? _td('utf-16be', body.subarray(2))
+    : _td('utf-16le', body.subarray(body[0] === 0xFF && body[1] === 0xFE ? 2 : 0));
+  else if (enc === 2) text = _td('utf-16be', body);
+  else                text = _td('utf-8', body);
+  return text.replace(/\0.*$/, '').trim();
+}
+
+function parseID3(u8) {
+  const ver = u8[3];
+  if (ver < 3 || ver > 4) return null;
+  const size = ((u8[6] & 0x7f) << 21) | ((u8[7] & 0x7f) << 14) | ((u8[8] & 0x7f) << 7) | (u8[9] & 0x7f);
+  const end  = Math.min(10 + size, u8.length);
+  const out  = {};
+  let p = 10;
+  while (p + 10 <= end) {
+    const id = String.fromCharCode(u8[p], u8[p + 1], u8[p + 2], u8[p + 3]);
+    if (!/^[A-Z0-9]{4}$/.test(id)) break;
+    const fsz = ver === 4
+      ? (((u8[p + 4] & 0x7f) << 21) | ((u8[p + 5] & 0x7f) << 14) | ((u8[p + 6] & 0x7f) << 7) | (u8[p + 7] & 0x7f))
+      : (((u8[p + 4] << 24) | (u8[p + 5] << 16) | (u8[p + 6] << 8) | u8[p + 7]) >>> 0);
+    p += 10;
+    if (fsz <= 0 || p + fsz > end) break;
+    if (id === 'TIT2' || id === 'TPE1' || id === 'TALB') {
+      const text = _id3Text(u8.subarray(p, p + fsz));
+      if (text) out[id === 'TIT2' ? 'title' : id === 'TPE1' ? 'artist' : 'album'] = text;
+    }
+    p += fsz;
+  }
+  return out;
+}
+
+function parseFLAC(u8) {
+  let p = 4;
+  while (p + 4 <= u8.length) {
+    const last = u8[p] & 0x80;
+    const type = u8[p] & 0x7f;
+    const len  = (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
+    p += 4;
+    if (type === 4) {   // VORBIS_COMMENT
+      if (p + len > u8.length) return null;
+      const dv = new DataView(u8.buffer, u8.byteOffset + p, len);
+      let q = 4 + dv.getUint32(0, true);              // skip vendor string
+      const count = dv.getUint32(q, true); q += 4;
+      const out = {};
+      for (let i = 0; i < count && q + 4 <= len; i++) {
+        const l = dv.getUint32(q, true); q += 4;
+        if (q + l > len) break;
+        const kv = _td('utf-8', u8.subarray(p + q, p + q + l));
+        q += l;
+        const eq = kv.indexOf('=');
+        if (eq < 0) continue;
+        const key = kv.slice(0, eq).toUpperCase();
+        if (key === 'TITLE' || key === 'ARTIST' || key === 'ALBUM') out[key.toLowerCase()] = kv.slice(eq + 1);
+      }
+      return out;
+    }
+    p += len;
+    if (last) break;
+  }
+  return null;
+}
+
+function parseMP4(u8) {
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+
+  // Walk sibling atoms; descend into the first atom named by path[0]
+  function walk(start, end, path, out) {
+    let p = start;
+    while (p + 8 <= end) {
+      let size = dv.getUint32(p);
+      const type = String.fromCharCode(u8[p + 4], u8[p + 5], u8[p + 6], u8[p + 7]);
+      let hdr = 8;
+      if (size === 1) {                                // 64-bit extended size
+        if (p + 16 > end) break;
+        size = Number(dv.getBigUint64(p + 8));
+        hdr  = 16;
+      } else if (size === 0) {
+        size = end - p;
+      }
+      if (size < hdr || p + size > end) break;
+      if (path.length && type === path[0]) {
+        let cs = p + hdr;
+        if (type === 'meta') cs += 4;                  // meta carries version/flags
+        walk(cs, p + size, path.slice(1), out);
+        return;
+      }
+      if (!path.length && (type === '\u00A9nam' || type === '\u00A9ART' || type === '\u00A9alb')) {
+        const dp = p + hdr;                            // child 'data' atom
+        if (dp + 16 <= p + size && dv.getUint32(dp) >= 16 &&
+            u8[dp + 4] === 0x64 && u8[dp + 5] === 0x61 && u8[dp + 6] === 0x74 && u8[dp + 7] === 0x61) {
+          const text = _td('utf-8', u8.subarray(dp + 16, dp + dv.getUint32(dp))).trim();
+          if (text) out[type === '\u00A9nam' ? 'title' : type === '\u00A9ART' ? 'artist' : 'album'] = text;
+        }
+      }
+      p += size;
+    }
+  }
+  const out = {};
+  walk(0, u8.length, ['moov', 'udta', 'meta', 'ilst'], out);
+  return out;
+}
+
+function parseAudioTags(buf) {
+  try {
+    if (!buf || buf.byteLength < 16) return null;
+    const u8 = new Uint8Array(buf);
+    if (u8[0] === 0x49 && u8[1] === 0x44 && u8[2] === 0x33) return parseID3(u8);                    // "ID3"
+    if (u8[0] === 0x66 && u8[1] === 0x4C && u8[2] === 0x61 && u8[3] === 0x43) return parseFLAC(u8); // "fLaC"
+    if (u8[4] === 0x66 && u8[5] === 0x74 && u8[6] === 0x79 && u8[7] === 0x70) return parseMP4(u8);  // "ftyp"
+    return null;
+  } catch (_) { return null; }
+}
+
+let _loadSeq = 0;   // guards against overlapping decode completions
+
+let _objUrl = null;   // Blob URL of the file currently playing
+
+async function loadFile(file, autoplay) {
+  // Continue playing the new file when it replaces one that was playing
+  // (tree click, [ ] keys, media keys); the ended handler passes true for 连播
+  if (autoplay === undefined) autoplay = S.playing;
+
   D.loading.classList.remove('hidden');
   D.sbState.textContent = '解码中…';
+
+  const seq = ++_loadSeq;
 
   try {
     const ctx = getActx();
     const arrayBuf = await file.arrayBuffer();
-    const audioBuf = await ctx.decodeAudioData(arrayBuf);
+    // Tags must be parsed BEFORE decodeAudioData — it detaches the buffer
+    const tags = parseAudioTags(arrayBuf) || {};
 
-    killSource();
+    const [audioBuf] = await Promise.all([
+      ctx.decodeAudioData(arrayBuf),
+      // The element only becomes seekable once its metadata has loaded
+      new Promise((res, rej) => {
+        const ok  = () => { cleanup(); res(); };
+        const bad = () => { cleanup(); rej(new Error('无法播放该格式')); };
+        const cleanup = () => {
+          D.player.removeEventListener('loadedmetadata', ok);
+          D.player.removeEventListener('error', bad);
+        };
+        D.player.addEventListener('loadedmetadata', ok);
+        D.player.addEventListener('error', bad);
+        if (_objUrl) URL.revokeObjectURL(_objUrl);
+        _objUrl = URL.createObjectURL(file);
+        D.player.src = _objUrl;
+      }),
+    ]);
+    if (seq !== _loadSeq) return;   // a newer loadFile() superseded this one
+
+    D.player.pause();
+    setPlayIcon(false);   // reset icon even if a previous file was playing
+    stopRaf();            // stop an orphaned rAF loop from the previous file
 
     S.buffer   = audioBuf;
     S.playing  = false;
-    S.pbOffset = 0;
     S.selA     = 0;
     S.selB     = 0;
+    S.viewA    = 0;
+    S.viewB    = 1;
 
     resizeCanvases();
     buildPeaks();
 
-    const ch      = audioBuf.numberOfChannels === 1 ? 'Mono' : 'Stereo';
-    const info    = `${file.name}  ·  ${fmtDur(audioBuf.duration)}  ·  ${audioBuf.sampleRate} Hz  ·  ${ch}`;
-    D.fileBadge.textContent = info;
+    // Header badge: tags first, filename fallback; hover shows full info
+    const ch     = audioBuf.numberOfChannels === 1 ? 'Mono' : 'Stereo';
+    const title  = tags.title  || file.name;
+    const artist = tags.artist || '';
+    const album  = tags.album  || '';
+    const tech   = `${fmtDur(audioBuf.duration)} · ${audioBuf.sampleRate} Hz · ${ch}`;
+    D.fileBadge.textContent = artist ? `${title} — ${artist} · ${tech}` : `${title} · ${tech}`;
+    D.fileBadge.title = [
+      tags.title, tags.artist, tags.album,
+      `${fmtDur(audioBuf.duration)} · ${audioBuf.sampleRate} Hz · ${ch}`,
+    ].filter(Boolean).join(' · ');
     D.sbFile.textContent    = file.name;
     D.sbDur.textContent     = fmtDur(audioBuf.duration);
     D.sbState.textContent   = '就绪';
 
+    // Now-playing info for hardware media keys
+    if ('mediaSession' in navigator && typeof MediaMetadata === 'function') {
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title:  title,
+          artist: artist || 'MiniAudition',
+          album:  album,
+        });
+      } catch (_) {}
+    }
+
     D.dropZone.classList.add('hidden');
+    D.player.currentTime = 0;
     updateTimecode(0);
     updateSelStatus();
     redrawAll();
+
+    if (autoplay) doPlay(0);
   } catch (err) {
+    if (seq !== _loadSeq) return;   // stale load failed — a newer one owns the status bar
     console.error(err);
-    D.sbState.textContent = '❌ 解码失败：' + (err.message || err);
+    D.sbState.textContent = '❌ 加载失败：' + (err.message || err);
   } finally {
-    D.loading.classList.add('hidden');
+    if (seq === _loadSeq) D.loading.classList.add('hidden');
   }
 }
 
@@ -720,9 +1007,9 @@ async function loadFile(file) {
 // ─────────────────────────────────────────────────────────────────────────────
 function buildPeaks() {
   const buf = S.buffer;
-  if (!buf) return;
+  if (!buf || !S.waveW) return;
 
-  const W   = D.waveCv.width || 800;
+  const W   = S.waveW;
   const nch = buf.numberOfChannels;
   const N   = buf.length;
 
@@ -730,20 +1017,26 @@ function buildPeaks() {
   const channels = [];
   for (let c = 0; c < nch; c++) channels.push(buf.getChannelData(c));
 
+  // Peaks span the current zoom view window
+  const v0   = S.viewA * N;
+  const span = Math.max(1, (S.viewB - S.viewA) * N);
   const peaks = new Float32Array(W * 2);
 
   for (let x = 0; x < W; x++) {
-    const i0 = Math.floor((x / W) * N);
-    const i1 = Math.max(i0 + 1, Math.floor(((x + 1) / W) * N));
+    const i0 = Math.floor(v0 + (x / W) * span);
+    const i1 = Math.min(N, Math.max(i0 + 1, Math.floor(v0 + ((x + 1) / W) * span)));
     let mn = 0, mx = 0;
 
-    for (let i = i0; i < i1; i++) {
-      // Average all channels at each sample
-      let v = 0;
-      for (let c = 0; c < nch; c++) v += channels[c][i];
-      v /= nch;
-      if (v < mn) mn = v;
-      if (v > mx) mx = v;
+    // Stride-sample dense columns: cap work at ~50 samples per column
+    const step = Math.max(1, Math.floor((i1 - i0) / 50));
+    for (let i = i0; i < i1; i += step) {
+      // Union min/max across channels (no averaging: keeps dual-language
+      // L/R tracks from cancelling out in the waveform)
+      for (let c = 0; c < nch; c++) {
+        const v = channels[c][i];
+        if (v < mn) mn = v;
+        if (v > mx) mx = v;
+      }
     }
 
     peaks[x * 2]     = mn;
@@ -758,24 +1051,36 @@ function buildPeaks() {
 // Canvas Resize
 // ─────────────────────────────────────────────────────────────────────────────
 function resizeCanvases() {
-  const rRect = D.rulerCv.parentElement.getBoundingClientRect();
-  const wRect = D.waveWrap.getBoundingClientRect();
+  const dpr   = window.devicePixelRatio || 1;
+  // Measure the canvases themselves (content box), not their bordered wraps —
+  // the wave-wrap 1px border would otherwise squeeze the backing store by 2px
+  const rRect = D.rulerCv.getBoundingClientRect();
+  const wRect = D.waveCv.getBoundingClientRect();
 
   const rw = Math.max(1, Math.floor(rRect.width));
   const ww = Math.max(1, Math.floor(wRect.width));
   const wh = Math.max(1, Math.floor(wRect.height));
 
-  if (D.rulerCv.width !== rw || D.rulerCv.height !== 28) {
-    D.rulerCv.width  = rw;
-    D.rulerCv.height = 28;
+  // Peaks depend on the logical width only — skip rebuild for height/dpr changes
+  const viewChanged = (S.waveW !== ww || S.waveH !== wh);
+  S.rulerW = rw;
+  S.waveW  = ww;
+  S.waveH  = wh;
+
+  const rwPx = Math.round(rw * dpr), rhPx = Math.round(28 * dpr);
+  if (D.rulerCv.width !== rwPx || D.rulerCv.height !== rhPx) {
+    D.rulerCv.width  = rwPx;
+    D.rulerCv.height = rhPx;
+    D.rulerCv.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  const needRebuild = (D.waveCv.width !== ww || D.waveCv.height !== wh);
-  if (needRebuild) {
-    D.waveCv.width  = ww;
-    D.waveCv.height = wh;
-    if (S.buffer) buildPeaks();
+  const wwPx = Math.round(ww * dpr), whPx = Math.round(wh * dpr);
+  if (D.waveCv.width !== wwPx || D.waveCv.height !== whPx) {
+    D.waveCv.width  = wwPx;
+    D.waveCv.height = whPx;
+    D.waveCv.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
   }
+  if (S.buffer && viewChanged) buildPeaks();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -789,8 +1094,8 @@ function redrawAll() {
 function drawRuler() {
   const cv = D.rulerCv;
   const cx = cv.getContext('2d');
-  const W  = cv.width;
-  const H  = cv.height;
+  const W  = S.rulerW;
+  const H  = 28;
 
   cx.fillStyle = '#191c25';
   cx.fillRect(0, 0, W, H);
@@ -799,18 +1104,25 @@ function drawRuler() {
 
   const dur = S.buffer.duration;
 
-  // Selection highlight on ruler
+  // Selection highlight on ruler (clamped to view)
   if (hasRange()) {
-    cx.fillStyle = 'rgba(81,153,255,.22)';
-    cx.fillRect(selStart() * W, 0, (selEnd() - selStart()) * W, H);
+    const sxC = Math.max(0, Math.min(W, bufToX(selStart()) * W));
+    const exC = Math.max(0, Math.min(W, bufToX(selEnd())   * W));
+    if (exC > sxC) {
+      cx.fillStyle = 'rgba(81,153,255,.22)';
+      cx.fillRect(sxC, 0, exC - sxC, H);
+    }
   }
 
-  // Pick a nice tick interval
-  const niceTicks = [0.1, .2, .25, .5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+  // Pick a nice tick interval for the visible span
+  const niceTicks = [0.01, 0.02, 0.05, 0.1, .2, .25, .5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
   const minPx = 60;
+  const v0s = S.viewA * dur;
+  const v1s = S.viewB * dur;
+  const vds = Math.max(1e-6, v1s - v0s);
   let iv = niceTicks[niceTicks.length - 1];
   for (const t of niceTicks) {
-    if ((t / dur) * W >= minPx) { iv = t; break; }
+    if ((t / vds) * W >= minPx) { iv = t; break; }
   }
 
   cx.font          = '9px "SF Mono","Fira Code","Courier New",monospace';
@@ -819,9 +1131,9 @@ function drawRuler() {
   cx.strokeStyle   = '#333848';
   cx.lineWidth     = 1;
 
-  let t = 0;
-  while (t <= dur + iv * 0.01) {
-    const x = Math.round((t / dur) * W);
+  let t = Math.floor(v0s / iv) * iv;
+  while (t <= v1s + iv * 0.01) {
+    const x = Math.round(((t - v0s) / vds) * W);
     cx.beginPath();
     cx.moveTo(x + .5, H - 6);
     cx.lineTo(x + .5, H);
@@ -834,7 +1146,7 @@ function drawRuler() {
   // Playhead marker on ruler
   const pos = getCurrPos();
   if (pos >= 0 && pos <= dur) {
-    const px = (pos / dur) * W;
+    const px = bufToX(pos / dur) * W;
     cx.fillStyle = '#ffb347';
     cx.beginPath();
     cx.moveTo(px - 5, 0);
@@ -866,14 +1178,17 @@ let _dragging = false;
 function drawWave() {
   const cv = D.waveCv;
   const cx = cv.getContext('2d');
-  const W  = cv.width;
-  const H  = cv.height;
+  const W  = S.waveW;
+  const H  = S.waveH;
   const mid = H / 2;
 
   cx.fillStyle = '#10121a';
   cx.fillRect(0, 0, W, H);
 
   if (!S.buffer || !S.peaks) return;
+
+  const v0 = S.viewA;
+  const vd = viewDur();
 
   // Subtle horizontal grid
   cx.strokeStyle = '#181b24';
@@ -888,23 +1203,32 @@ function drawWave() {
   cx.lineWidth   = 1;
   cx.beginPath(); cx.moveTo(0, mid + .5); cx.lineTo(W, mid + .5); cx.stroke();
 
-  // Selection region background
-  if (hasRange()) {
-    cx.fillStyle = 'rgba(81,153,255,.11)';
-    const sx = selStart() * W;
-    cx.fillRect(sx, 0, (selEnd() - selStart()) * W, H);
-  }
-
   const peaks = S.peaks;
   const scl   = mid * 0.95;
+
+  // Selection geometry in screen space, clamped to the view
+  let sx = 0, ex = 0, inView = false;
+  if (hasRange()) {
+    const sxRaw = bufToX(selStart()) * W;
+    const exRaw = bufToX(selEnd())   * W;
+    sx = Math.max(0, Math.min(W, sxRaw));
+    ex = Math.max(0, Math.min(W, exRaw));
+    inView = ex > sx;
+  }
+
+  // Selection region background
+  if (inView) {
+    cx.fillStyle = 'rgba(81,153,255,.11)';
+    cx.fillRect(sx, 0, ex - sx, H);
+  }
 
   // Draw dim waveform (outside selection)
   cx.strokeStyle = '#1f6e4a';
   cx.lineWidth   = 1;
   cx.beginPath();
   for (let x = 0; x < W; x++) {
-    const norm = x / W;
-    if (hasRange() && norm >= selStart() && norm <= selEnd()) continue;
+    const n = v0 + (x / W) * vd;
+    if (inView && n >= selStart() && n <= selEnd()) continue;
     const y0 = mid + peaks[x * 2]     * scl;
     const y1 = mid + peaks[x * 2 + 1] * scl;
     cx.moveTo(x + .5, y0);
@@ -913,13 +1237,13 @@ function drawWave() {
   cx.stroke();
 
   // Draw bright waveform (inside selection)
-  if (hasRange()) {
+  if (inView) {
     cx.strokeStyle = '#3ecf8e';
     cx.lineWidth   = 1;
     cx.beginPath();
     for (let x = 0; x < W; x++) {
-      const norm = x / W;
-      if (norm < selStart() || norm > selEnd()) continue;
+      const n = v0 + (x / W) * vd;
+      if (n < selStart() || n > selEnd()) continue;
       const y0 = mid + peaks[x * 2]     * scl;
       const y1 = mid + peaks[x * 2 + 1] * scl;
       cx.moveTo(x + .5, y0);
@@ -931,11 +1255,11 @@ function drawWave() {
     cx.strokeStyle  = 'rgba(81,153,255,.85)';
     cx.lineWidth    = 1;
     cx.setLineDash([5, 4]);
-    const sx = Math.round(selStart() * W) + .5;
-    const ex = Math.round(selEnd()   * W) + .5;
+    const sxl = Math.round(bufToX(selStart()) * W) + .5;
+    const exl = Math.round(bufToX(selEnd())   * W) + .5;
     cx.beginPath();
-    cx.moveTo(sx, 0); cx.lineTo(sx, H);
-    cx.moveTo(ex, 0); cx.lineTo(ex, H);
+    cx.moveTo(sxl, 0); cx.lineTo(sxl, H);
+    cx.moveTo(exl, 0); cx.lineTo(exl, H);
     cx.stroke();
     cx.setLineDash([]);
 
@@ -953,7 +1277,7 @@ function drawWave() {
   // Playhead
   const pos = getCurrPos();
   {
-    const phx = Math.round((pos / S.buffer.duration) * W);
+    const phx = Math.round(bufToX(pos / S.buffer.duration) * W);
 
     // soft glow
     cx.strokeStyle = 'rgba(255,179,71,.22)';
@@ -986,7 +1310,7 @@ function drawWave() {
 
     // Hover time tooltip
     if (S.buffer) {
-      const hovSec = S.hoverX * S.buffer.duration;
+      const hovSec = xToBuf(S.hoverX) * S.buffer.duration;
       const label  = fmtDur(hovSec);
       cx.font      = '10px "SF Mono","Fira Code",monospace';
       cx.fillStyle = 'rgba(200,204,212,.7)';
@@ -997,118 +1321,101 @@ function drawWave() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Playback
+// Playback — via the hidden <audio> element: native loop (loopStart/loopEnd,
+// with a rAF watchdog) and preservesPitch time-stretch. Position is
+// player.currentTime (ground truth); the element's play/pause/ended events
+// are the single UI sync point.
 // ─────────────────────────────────────────────────────────────────────────────
 function getCurrPos() {
-  if (!S.buffer) return 0;
-  if (!S.playing) return S.pbOffset;
+  return D.player.currentTime || 0;
+}
 
-  const elapsed = (getActx().currentTime - S.pbActxStart) * S.speed;
-
-  if (hasRange()) {
-    const ls = selStart() * S.buffer.duration;
-    const le = selEnd()   * S.buffer.duration;
-    const ld = le - ls;
-    if (ld > 0) return ls + ((S.pbOffset - ls + elapsed) % ld);
-  }
-
-  return Math.min(S.pbOffset + elapsed, S.buffer.duration);
+function setPitchPreserve() {
+  const a = D.player;
+  if ('preservesPitch' in a)            a.preservesPitch = true;
+  else if ('webkitPreservesPitch' in a) a.webkitPreservesPitch = true;
 }
 
 function doPlay(offset) {
   if (!S.buffer) return;
-  const ctx = getActx();
-
-  killSource();
-
-  const src = ctx.createBufferSource();
-  src.buffer = S.buffer;
-  src.playbackRate.value = S.speed;
-  src.connect(ctx.destination);
-
+  const a = D.player;
+  a.playbackRate = S.speed;
+  setPitchPreserve();
   if (hasRange()) {
     const ls = selStart() * S.buffer.duration;
     const le = selEnd()   * S.buffer.duration;
-    src.loop      = true;
-    src.loopStart = ls;
-    src.loopEnd   = le;
+    a.loop      = true;
+    a.loopStart = ls;
+    a.loopEnd   = le;
     // Clamp offset to loop range
-    const off = Math.max(ls, Math.min(le - 0.001, offset));
-    src.start(0, off);
-    S.pbOffset = off;
+    a.currentTime = Math.max(ls, Math.min(le - 0.001, offset));
   } else {
-    src.loop     = false;
-    src.start(0, offset);
-    S.pbOffset   = offset;
-    src.onended  = onEnded;
+    a.loop = false;
+    a.currentTime = Math.max(0, Math.min(S.buffer.duration - 0.001, offset));
   }
-
-  S.source      = src;
-  S.pbActxStart = ctx.currentTime;
-  S.playing     = true;
-
-  setPlayIcon(true);
-  D.sbState.textContent = hasRange() ? '循环播放' : '播放中';
-  startRaf();
-}
-
-function onEnded() {
-  // Called when non-looped playback finishes naturally
-  if (!S.playing) return;
-  S.playing  = false;
-  S.pbOffset = 0;
-  setPlayIcon(false);
-  D.sbState.textContent = '就绪';
-  stopRaf();
-  updateTimecode(0);
-  redrawAll();
-}
-
-function killSource() {
-  if (S.source) {
-    S.source.onended = null;
-    try { S.source.stop(); } catch (_) {}
-    S.source.disconnect();
-    S.source = null;
-  }
+  a.play().catch(() => {});   // autoplay rejections surface via the pause event
 }
 
 function doPause() {
-  if (!S.playing) return;
-  const pos = getCurrPos();
-  killSource();
-  S.playing  = false;
-  S.pbOffset = pos;
-  setPlayIcon(false);
-  D.sbState.textContent = '已暂停';
-  stopRaf();
-  redrawAll();
+  D.player.pause();
 }
 
+let _stopIntent = false;
 function doStop() {
-  killSource();
-  S.playing  = false;
-  S.pbOffset = hasRange() && S.buffer
-    ? selStart() * S.buffer.duration
-    : 0;
-  setPlayIcon(false);
-  D.sbState.textContent = '已停止';
-  stopRaf();
-  updateTimecode(S.pbOffset);
-  redrawAll();
+  const wasPlaying = S.playing;
+  if (wasPlaying) _stopIntent = true;
+  D.player.pause();
+  D.player.currentTime = hasRange() && S.buffer ? selStart() * S.buffer.duration : 0;
+  if (!wasPlaying) {   // already paused — no pause event will fire; sync UI here
+    updateTimecode(D.player.currentTime);
+    redrawAll();
+  }
 }
 
 function togglePlay() {
   if (!S.buffer) return;
   if (S.playing) doPause();
-  else           doPlay(S.pbOffset);
+  else           doPlay(D.player.currentTime);
 }
 
 function setPlayIcon(playing) {
   D.iconPlay.style.display  = playing ? 'none' : '';
   D.iconPause.style.display = playing ? ''     : 'none';
   D.btnPlay.classList.toggle('active', playing);
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+  }
 }
+
+// UI sync — the element's events are the single source of truth for
+// S.playing, icon, status text, rAF loop and mediaSession.playbackState
+D.player.addEventListener('play', () => {
+  S.playing = true;
+  setPlayIcon(true);
+  D.sbState.textContent = hasRange() ? '循环播放' : '播放中';
+  startRaf();
+});
+
+D.player.addEventListener('pause', () => {
+  const stopped = _stopIntent;
+  _stopIntent = false;
+  S.playing = false;
+  setPlayIcon(false);
+  stopRaf();
+  if (!D.player.ended) {   // at natural end the 'ended' handler owns the UI
+    D.sbState.textContent = stopped ? '已停止' : '已暂停';
+    updateTimecode(D.player.currentTime);
+    redrawAll();
+  }
+});
+
+D.player.addEventListener('ended', () => {
+  updateTimecode(0);
+  // Auto-advance to the next file in the tree when enabled (连播)
+  if (S.autoNext && playAdjacentFile(+1, true)) return;
+  D.sbState.textContent = '就绪';
+  redrawAll();
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Animation loop
@@ -1116,7 +1423,18 @@ function setPlayIcon(playing) {
 function startRaf() {
   if (S.raf) return;
   const tick = () => {
-    const pos = getCurrPos();
+    let pos = getCurrPos();
+    if (S.playing && hasRange() && S.buffer) {
+      // Watchdog: enforce the selection loop even if the browser ignores
+      // loopStart/loopEnd (implementation gaps on some platforms)
+      const ls = selStart() * S.buffer.duration;
+      const le = selEnd()   * S.buffer.duration;
+      if (pos > le + 0.05 || pos < ls - 0.05) {
+        D.player.currentTime = ls;
+        pos = ls;
+      }
+    }
+    if (S.playing) ensurePosVisible(pos);   // auto-follow the playhead when zoomed
     updateTimecode(pos);
     drawWave();
     drawRuler();
@@ -1170,40 +1488,71 @@ function updateSelStatus() {
 const DRAG_THR = 4;
 let _mouseTracking = false;
 let _mouseDownX    = 0;
+let _dragEdge      = null;   // 'start' | 'end' while nudging a selection edge
 
 D.waveCv.addEventListener('mousedown', e => {
-  if (!S.buffer) return;
+  if (!S.buffer || e.button !== 0) return;   // left button only — right-click keeps the selection
   e.preventDefault();
+
+  const norm = xToBuf(e.offsetX / S.waveW);
+
+  // Edge hit-test first: grabbing an existing boundary nudges it (F3)
+  _dragEdge = null;
+  if (hasRange()) {
+    const W  = S.waveW;
+    const sx = bufToX(selStart()) * W;
+    const ex = bufToX(selEnd())   * W;
+    if      (Math.abs(e.offsetX - sx) <= 6) _dragEdge = 'start';
+    else if (Math.abs(e.offsetX - ex) <= 6) _dragEdge = 'end';
+  }
 
   _mouseTracking = true;
   _dragging      = false;
   _mouseDownX    = e.offsetX;
 
-  const norm = clamp01(e.offsetX / D.waveCv.width);
-  S.selA = norm;
-  S.selB = norm;
+  if (!_dragEdge) {
+    S.selA = norm;
+    S.selB = norm;
+    if (!S.playing) updateTimecode(norm * S.buffer.duration);
+  }
 
   updateSelStatus();
-  if (!S.playing) updateTimecode(norm * S.buffer.duration);
   redrawAll();
 });
 
 D.waveCv.addEventListener('mousemove', e => {
   if (!S.buffer) return;
 
-  S.hoverX = clamp01(e.offsetX / D.waveCv.width);
+  S.hoverX = clamp01(e.offsetX / S.waveW);
 
   if (!_mouseTracking || e.buttons !== 1) {
-    // Hover-only: redraw for hover line
+    // Hover-only: cursor feedback near selection edges + hover line redraw
+    if (hasRange()) {
+      const W  = S.waveW;
+      const sx = bufToX(selStart()) * W;
+      const ex = bufToX(selEnd())   * W;
+      const near = Math.abs(e.offsetX - sx) <= 6 || Math.abs(e.offsetX - ex) <= 6;
+      D.waveCv.style.cursor = near ? 'ew-resize' : 'crosshair';
+    } else {
+      D.waveCv.style.cursor = 'crosshair';
+    }
     if (!S.playing) { drawWave(); drawRuler(); }
     return;
   }
 
-  if (Math.abs(e.offsetX - _mouseDownX) >= DRAG_THR) _dragging = true;
+  if (_dragEdge) {
+    if (Math.abs(e.offsetX - _mouseDownX) >= 1) _dragging = true;
+  } else if (Math.abs(e.offsetX - _mouseDownX) >= DRAG_THR) {
+    _dragging = true;
+  }
 
   if (_dragging) {
-    S.selA = clamp01(_mouseDownX      / D.waveCv.width);
-    S.selB = clamp01(e.offsetX        / D.waveCv.width);
+    if (_dragEdge === 'start')      setSelStart(xToBuf(e.offsetX / S.waveW));
+    else if (_dragEdge === 'end')   setSelEnd(xToBuf(e.offsetX / S.waveW));
+    else {
+      S.selA = xToBuf(_mouseDownX / S.waveW);
+      S.selB = xToBuf(e.offsetX   / S.waveW);
+    }
     updateSelStatus();
     redrawAll();
   }
@@ -1213,29 +1562,35 @@ window.addEventListener('mouseup', e => {
   if (!_mouseTracking) return;
   _mouseTracking = false;
 
-  if (!S.buffer) { _dragging = false; return; }
+  if (!S.buffer) { _dragging = false; _dragEdge = null; return; }
 
-  const wasRange = _dragging;
+  const grabbedEdge = _dragEdge;
+  const wasRange    = _dragging;
   _dragging = false;
+  _dragEdge = null;
 
-  if (!wasRange) {
-    // Pure click → set cursor
-    const norm = clamp01(_mouseDownX / D.waveCv.width);
-    S.selA = norm;
-    S.selB = norm;
-    S.pbOffset = norm * S.buffer.duration;
-
-    if (S.playing) doPlay(S.pbOffset);
-    else           updateTimecode(S.pbOffset);
-  } else {
-    // Range drag complete
+  if (wasRange) {
+    // Range drag (new selection or edge nudge) complete
     const off = selStart() * S.buffer.duration;
     if (S.playing) doPlay(off);
     else {
-      S.pbOffset = off;
+      D.player.currentTime = off;
       updateTimecode(off);
     }
+  } else if (!grabbedEdge) {
+    // Pure click → set cursor
+    const norm = xToBuf(_mouseDownX / S.waveW);
+    S.selA = norm;
+    S.selB = norm;
+    const t = norm * S.buffer.duration;
+
+    if (S.playing) doPlay(t);
+    else {
+      D.player.currentTime = t;
+      updateTimecode(t);
+    }
   }
+  // Edge grabbed without moving → keep the selection untouched
 
   updateSelStatus();
   redrawAll();
@@ -1245,6 +1600,46 @@ D.waveCv.addEventListener('mouseleave', () => {
   S.hoverX = -1;
   if (!S.playing) redrawAll();
 });
+
+// Zoom & pan (⌘/Ctrl+wheel = zoom at cursor, wheel = pan). Bound to both
+// canvases so pinch/⌘+wheel over the ruler doesn't trigger browser page zoom.
+// offsetX is per-target but both canvases share the same width, so x aligns.
+function onCanvasWheel(e) {
+  if (!S.buffer) return;
+  e.preventDefault();
+
+  const dur   = S.buffer.duration;
+  const minVD = 0.2 / dur;                    // ~0.2s minimum view span
+  const vd    = viewDur();
+  const unit  = e.deltaMode === 1 ? 16 : 1;   // Firefox line-mode deltas
+
+  if (e.ctrlKey || e.metaKey) {
+    const cxs    = clamp01(e.offsetX / S.waveW);
+    const anchor = S.viewA + cxs * vd;
+    const dy     = e.deltaY * unit;
+    // Diminishing per-event coefficient: trackpad pinch sends many tiny
+    // deltas (needs a large k to keep up), mouse notches send ~±100
+    // (large k would overshoot). The /(1+|dy|/25) curve makes one pinch
+    // gesture ≈ 3× zoom while a Ctrl+wheel notch stays ≈ 15%.
+    let nvd = Math.min(1, Math.max(minVD, vd * Math.exp(dy * 0.007 / (1 + Math.abs(dy) / 25))));
+    let na  = anchor - cxs * nvd;
+    if (na < 0) na = 0;
+    if (na + nvd > 1) na = 1 - nvd;
+    S.viewA = na;
+    S.viewB = na + nvd;
+  } else {
+    const dRaw = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    let na = S.viewA + (dRaw * unit) / S.waveW * vd;
+    na = Math.max(0, Math.min(1 - vd, na));
+    S.viewA = na;
+    S.viewB = na + vd;
+  }
+
+  buildPeaks();
+  redrawAll();
+}
+D.waveCv.addEventListener('wheel', onCanvasWheel, { passive: false });
+D.rulerCv.addEventListener('wheel', onCanvasWheel, { passive: false });
 
 function clamp01(v) { return Math.max(0, Math.min(1, v)); }
 
@@ -1408,7 +1803,7 @@ function renderFileTree() {
   D.fileTreeArea.scrollTop = scrollTop;
 }
 
-function onTreeNodeClick(node) {
+function onTreeNodeClick(node, autoplay) {
   if (node.type === 'folder') {
     node.expanded = !node.expanded;
     renderFileTree();
@@ -1418,11 +1813,11 @@ function onTreeNodeClick(node) {
   renderFileTree();
   if (node.file) {
     // From <input webkitdirectory> — direct File reference
-    loadFile(node.file);
+    loadFile(node.file, autoplay);
   } else if (node.entry) {
     // From FileSystem API drag-and-drop
     node.entry.file(
-      file => loadFile(file),
+      file => loadFile(file, autoplay),
       err  => { console.error('无法读取文件:', err); D.sbState.textContent = '读取文件失败'; }
     );
   }
@@ -1443,29 +1838,33 @@ function flattenFiles() {
   return result;
 }
 
-function playAdjacentFile(dir) {
+function playAdjacentFile(dir, autoplay) {
   const files = flattenFiles();
-  if (!files.length) return;
+  if (!files.length) return false;
   const idx = files.findIndex(f => f.id === S.activeFileId);
   let next;
   if (idx === -1) {
     next = dir > 0 ? files[0] : files[files.length - 1];
   } else {
     const ni = idx + dir;
-    if (ni < 0 || ni >= files.length) return;
+    if (ni < 0 || ni >= files.length) return false;
     next = files[ni];
   }
-  onTreeNodeClick(next);
+  onTreeNodeClick(next, autoplay);
+  return true;
 }
 
 function seekBy(delta) {
   if (!S.buffer) return;
   const dur = S.buffer.duration;
-  const pos = getCurrPos();
-  const newPos = Math.max(0, Math.min(dur, pos + delta));
-  S.pbOffset = newPos;
+  const newPos = Math.max(0, Math.min(dur, getCurrPos() + delta));
   if (S.playing) doPlay(newPos);
-  else { updateTimecode(newPos); redrawAll(); }
+  else {
+    D.player.currentTime = newPos;
+    ensurePosVisible(newPos);
+    updateTimecode(newPos);
+    redrawAll();
+  }
 }
 
 D.btnPrev.addEventListener('click', () => playAdjacentFile(-1));
@@ -1477,61 +1876,101 @@ document.getElementById('seek-group').addEventListener('click', e => {
   const sec = parseInt(btn.dataset.seek);
   if (isNaN(sec) || sec === S.seekSec) return;
   S.seekSec = sec;
+  savePrefs();
   document.querySelectorAll('#seek-group .sbtn').forEach(b => {
     b.classList.toggle('active', parseInt(b.dataset.seek) === sec);
   });
+});
+
+D.btnAuto.addEventListener('click', () => {
+  S.autoNext = !S.autoNext;
+  D.btnAuto.classList.toggle('active', S.autoNext);
+  savePrefs();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sidebar toggle & resize
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Unified drop handler used by both workspace and file-tree-area
+// Unified drop handler used by both workspace and file-tree-area.
+// Supports any mix of folders and audio files in a single drop.
 async function handleDropItems(dt) {
-  const items = dt.items;
-  if (items && items.length) {
-    const firstEntry = items[0].webkitGetAsEntry?.();
-    if (firstEntry && firstEntry.isDirectory) {
-      // Try FileSystem API first; if it returns empty, fall back to dt.files
-      D.sbState.textContent = '读取目录…';
+  const items   = dt.items ? Array.from(dt.items).slice(0, 100) : [];
+  const entries = items.map(it => (it.webkitGetAsEntry ? it.webkitGetAsEntry() : null)).filter(Boolean);
+
+  const dirEntries  = entries.filter(en => en.isDirectory);
+  const fileEntries = entries.filter(en => en.isFile && AUDIO_EXTS.has(en.name.split('.').pop().toLowerCase()));
+
+  const folders = [];   // tree nodes read via FileSystem API
+  let files = [];       // File objects ready to load
+  let dirErrors = 0;
+
+  if (dirEntries.length) {
+    D.sbState.textContent = '读取目录…';
+    for (const de of dirEntries) {
       try {
-        const node = await readDirEntry(firstEntry, 0);
-        if (node.children.length) {
-          S.fileTree.push(node);
-          renderFileTree();
-          D.sbState.textContent = '就绪';
-          if (!S.sidebarVisible) toggleSidebar();
-          return;
-        }
+        const node = await readDirEntry(de, 0);
+        if (node.children.length) folders.push(node);
+        else console.warn('dropped folder has no audio files:', de.name);
       } catch (err) {
-        console.warn('FileSystem API failed, trying files fallback:', err);
+        console.warn('FileSystem API failed for dropped folder:', de.name, err);
+        dirErrors++;
       }
-      // Fallback: dt.files won't contain folder contents in most browsers
-      // so guide the user to use the folder picker button
-      D.sbState.textContent = '拖放不可用，请使用 🗂 按钮打开文件夹';
+    }
+  }
+
+  if (fileEntries.length) {
+    files = (await Promise.all(
+      fileEntries.map(fe => new Promise((res, rej) => fe.file(res, rej)).catch(() => null))
+    )).filter(Boolean);
+  }
+
+  // dt.files fallback for drags without entry support (older browsers)
+  if (!entries.length && dt.files && dt.files.length) {
+    const f0 = dt.files[0];
+    const ext = f0.name.split('.').pop().toLowerCase();
+    if (AUDIO_EXTS.has(ext)) {
+      files = [f0];
+    } else if (f0.size === 0) {
+      // Likely a folder placeholder — entries unsupported in this browser
+      D.sbState.textContent = '请使用侧边栏的 🗂 按钮选择文件夹';
       if (!S.sidebarVisible) toggleSidebar();
       return;
     }
-    if (firstEntry && firstEntry.isFile) {
-      const ext = firstEntry.name.split('.').pop().toLowerCase();
-      if (AUDIO_EXTS.has(ext)) {
-        const file = await new Promise((res, rej) => firstEntry.file(res, rej));
-        loadFile(file);
-        return;
-      }
-    }
   }
-  // Plain files fallback (single audio file via dt.files)
-  const file = dt.files[0];
-  if (file) {
-    const ext = file.name.split('.').pop().toLowerCase();
-    if (AUDIO_EXTS.has(ext)) { loadFile(file); return; }
-    // If it looks like a folder (size 0), guide user
-    if (file.size === 0) {
-      D.sbState.textContent = '请使用侧边栏的 🗂 按钮选择文件夹';
-      if (!S.sidebarVisible) toggleSidebar();
+
+  if (folders.length) S.fileTree.push(...folders);
+
+  if (files.length) {
+    if (files.length > 1 || folders.length) {
+      // Synthetic root keeps loose files addressable via [ ] / 连播
+      const root = { id: nextId(), name: '拖入的文件', type: 'folder', children: [], expanded: true };
+      for (const f of files) root.children.push({ id: nextId(), name: f.name, type: 'file', file: f });
+      S.fileTree.push(root);
+      S.activeFileId = root.children[0].id;
     }
+    loadFile(files[0]);
   }
+
+  if (folders.length || files.length) {
+    renderFileTree();
+    D.sbState.textContent = '就绪';
+    if (!S.sidebarVisible) toggleSidebar();
+    return;
+  }
+
+  // Nothing playable came out of the drop
+  if (dirErrors) {
+    // Reading dropped directories isn't available in this context
+    // (e.g. Chrome on file:// pages) — fall back to the folder picker,
+    // which works everywhere. Drop grants transient user activation,
+    // so opening the picker here is allowed.
+    D.sbState.textContent = '拖放读取受限，请在新弹窗中选择该文件夹';
+    D.folderInput.click();
+  } else if (dirEntries.length) {
+    D.sbState.textContent = '该文件夹内未找到音频文件';
+  }
+  if (!S.sidebarVisible) toggleSidebar();
 }
 
 function toggleSidebar() {
@@ -1541,6 +1980,7 @@ function toggleSidebar() {
   D.btnFiles.classList.toggle('active', S.sidebarVisible);
   resizeCanvases();
   redrawAll();
+  savePrefs();
 }
 
 D.btnFiles.addEventListener('click', toggleSidebar);
@@ -1587,6 +2027,7 @@ window.addEventListener('mouseup', () => {
   document.body.style.userSelect = '';
   resizeCanvases();
   redrawAll();
+  savePrefs();
 });
 
 // Sidebar drag-and-drop (folders)
@@ -1606,17 +2047,63 @@ D.fileTreeArea.addEventListener('drop', async e => {
   await handleDropItems(e.dataTransfer);
 });
 
+// Buttons must not keep focus after a click — otherwise Space/Enter would
+// fire both the global shortcut and the browser's button activation.
+document.addEventListener('mousedown', e => {
+  if (e.target.closest('button')) e.preventDefault();
+});
+
+// After an A/B loop-point change: refresh UI; if playing, re-anchor the
+// running loop at pos (clamped into the new range) so playback continues
+// without an audible jump.
+function reanchorLoop(pos) {
+  updateSelStatus();
+  redrawAll();
+  if (S.playing && S.buffer) {
+    const ls = selStart() * S.buffer.duration;
+    const le = selEnd()   * S.buffer.duration;
+    doPlay(Math.max(ls, Math.min(le - 0.001, pos)));
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Keyboard
 // ─────────────────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;   // don't hijack ⌘/Ctrl/Alt combos
+  // Ignore auto-repeat except for the seek arrows (holding them steps continuously)
+  if (e.repeat && e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
 
   switch (e.code) {
     case 'Space':
       e.preventDefault();
       togglePlay();
       break;
+
+    case 'Enter':
+      // Replay the current loop selection from its start (shadowing hotkey)
+      e.preventDefault();
+      if (S.buffer && hasRange()) doPlay(selStart() * S.buffer.duration);
+      break;
+
+    case 'KeyA':
+    case 'KeyB': {
+      // Set loop start (A) / end (B) at the playhead — keeps selA <= selB
+      if (!S.buffer) break;
+      e.preventDefault();
+      const pos = getCurrPos();   // capture before the selection changes
+      const n = clamp01(pos / S.buffer.duration);
+      if (e.code === 'KeyA') {
+        S.selA = n;
+        if (S.selA > S.selB) S.selB = S.selA;
+      } else {
+        S.selB = n;
+        if (S.selB < S.selA) S.selA = S.selB;
+      }
+      reanchorLoop(pos);
+      break;
+    }
 
     case 'KeyS':
       e.preventDefault();
@@ -1627,9 +2114,8 @@ document.addEventListener('keydown', e => {
       e.preventDefault();
       if (S.buffer) {
         S.selA = 0; S.selB = 0;
-        S.pbOffset = 0;
         if (S.playing) doPlay(0);
-        else { updateTimecode(0); updateSelStatus(); redrawAll(); }
+        else { D.player.currentTime = 0; updateTimecode(0); updateSelStatus(); redrawAll(); }
       }
       break;
 
@@ -1637,8 +2123,26 @@ document.addEventListener('keydown', e => {
       e.preventDefault();
       if (S.buffer) {
         if (S.playing) doStop();
-        S.selA = 0; S.selB = 0; S.pbOffset = 0;
+        D.player.currentTime = 0;
+        S.selA = 0; S.selB = 0;
         updateTimecode(0); updateSelStatus(); redrawAll();
+      }
+      break;
+
+    case 'KeyZ':
+      // Zoom to selection; reset to full view when nothing is selected
+      e.preventDefault();
+      if (S.buffer) {
+        if (hasRange()) {
+          const pad = (selEnd() - selStart()) * 0.02;
+          S.viewA = clamp01(selStart() - pad);
+          S.viewB = clamp01(selEnd() + pad);
+        } else {
+          S.viewA = 0;
+          S.viewB = 1;
+        }
+        buildPeaks();
+        redrawAll();
       }
       break;
 
@@ -1711,17 +2215,18 @@ document.getElementById('speed-group').addEventListener('click', e => {
   if (isNaN(spd) || spd === S.speed) return;
 
   S.speed = spd;
+  savePrefs();
 
-  // Update active state
-  document.querySelectorAll('.sbtn').forEach(b => {
+  // Update active state — scoped to the speed group so the seek/autoNext
+  // buttons keep their own highlights
+  document.querySelectorAll('#speed-group .sbtn').forEach(b => {
     b.classList.toggle('active', parseFloat(b.dataset.speed) === spd);
   });
 
-  // Apply to running source without restarting from beginning
-  if (S.playing) {
-    const pos = getCurrPos();
-    doPlay(pos);
-  }
+  // Live rate change — position is player.currentTime, so the playhead
+  // never jumps and there is no audible gap. Pitch is preserved natively
+  // via preservesPitch (set in doPlay).
+  D.player.playbackRate = spd;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1739,9 +2244,60 @@ const ro = new ResizeObserver(() => {
 });
 ro.observe(D.trackArea);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Preferences persistence
+// ─────────────────────────────────────────────────────────────────────────────
+const PREFS_KEY = 'shadower.prefs';
+
+function savePrefs() {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({
+      speed: S.speed, seekSec: S.seekSec, sidebarW: S.sidebarW, sidebarVisible: S.sidebarVisible, autoNext: S.autoNext,
+    }));
+  } catch (_) {}
+}
+
+function loadPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+    if (typeof p.speed === 'number' && p.speed > 0) {
+      S.speed = p.speed;
+      document.querySelectorAll('.sbtn[data-speed]').forEach(b =>
+        b.classList.toggle('active', parseFloat(b.dataset.speed) === S.speed));
+    }
+    if (typeof p.seekSec === 'number' && p.seekSec > 0) {
+      S.seekSec = p.seekSec;
+      document.querySelectorAll('#seek-group .sbtn').forEach(b =>
+        b.classList.toggle('active', parseInt(b.dataset.seek) === S.seekSec));
+    }
+    if (typeof p.sidebarW === 'number' && p.sidebarW >= 140 && p.sidebarW <= 480) {
+      S.sidebarW = p.sidebarW;
+      D.sidebar.style.width = p.sidebarW + 'px';
+    }
+    if (p.autoNext === true) {
+      S.autoNext = true;
+      D.btnAuto.classList.add('active');
+    }
+    if (p.sidebarVisible === false) toggleSidebar();
+  } catch (_) {}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hardware media keys (headphones / keyboard)
+// ─────────────────────────────────────────────────────────────────────────────
+if ('mediaSession' in navigator) {
+  const msSet = (name, fn) => { try { navigator.mediaSession.setActionHandler(name, fn); } catch (_) {} };
+  msSet('play',          () => { if (S.buffer && !S.playing) doPlay(D.player.currentTime); });
+  msSet('pause',         () => { if (S.playing) doPause(); });
+  msSet('stop',          () => { if (S.buffer) doStop(); });
+  msSet('previoustrack', () => playAdjacentFile(-1));
+  msSet('nexttrack',     () => playAdjacentFile(+1));
+}
+
 // ── Init ──
+loadPrefs();
 D.sidebar.style.width = S.sidebarW + 'px';
-D.btnFiles.classList.add('active');
+D.btnFiles.classList.toggle('active', S.sidebarVisible);
 resizeCanvases();
 redrawAll();
 </script>
